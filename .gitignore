@@ -1,0 +1,7 @@
+__pycache__/
+.venv/
+local-gen/
+app/hd/
+dist/
+build/
+preview.png

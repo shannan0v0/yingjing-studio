@@ -1,0 +1,3 @@
+[I] sampling completed, taking 164.28s --- image.cpp:1038
+[I] generate_image completed in 258.68s --- image.cpp:1227
+[I] 1/1 images saved --- main.cpp:579
