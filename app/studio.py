@@ -136,7 +136,7 @@ class App:
         self.root = root
         self.result = None
         self.events = queue.Queue()
-        root.title("双图画室 · 离线版")
+        root.title("映境画室 · 离线版")
         page = ttk.Frame(root,padding=16)
         page.pack(fill="both",expand=True)
         page.columnconfigure(1,weight=1,minsize=300)
