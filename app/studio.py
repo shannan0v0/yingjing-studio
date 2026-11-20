@@ -136,48 +136,114 @@ class App:
         self.root = root
         self.result = None
         self.events = queue.Queue()
+        # The layout uses logical pixels, including on high-DPI Windows desktops.
+        root.tk.call("tk", "scaling", 96 / 72)
         root.title("映境画室 · 离线版")
-        page = ttk.Frame(root,padding=16)
-        page.pack(fill="both",expand=True)
-        page.columnconfigure(1,weight=1,minsize=300)
-        self.paths = [tk.StringVar(),tk.StringVar()]
-        for i,label in enumerate(("人物或宠物", "背景照片")):
-            ttk.Label(page,text=label).grid(row=i,column=0,sticky="w")
-            ttk.Entry(page,textvariable=self.paths[i]).grid(row=i,column=1,sticky="ew",padx=8,pady=4)
-            ttk.Button(page,text="选择图片",command=lambda n=i:self.pick(n)).grid(row=i,column=2)
+        root.geometry("1040x660")
+        root.minsize(790, 570)
+        root.option_add("*Font", ("Microsoft YaHei UI", 10))
+        ink, paper, panel, accent = "#24332d", "#edece5", "#fbfaf6", "#285f49"
+        root.configure(bg=paper)
+        self.paths = [tk.StringVar(), tk.StringVar()]
         self.style = tk.StringVar(value="电影")
         self.position = tk.StringVar(value="居中")
         self.size = tk.IntVar(value=64)
         self.generate = tk.BooleanVar(value=(RUNTIME/"weights").is_dir())
         self.perch = tk.BooleanVar(value=False)
-        self.hd = tk.BooleanVar(value=(Path(os.environ.get("PHOTOSTUDIO_HD", ROOT / "hd")) / "realesrgan-ncnn-vulkan.exe").is_file())
         self.low_memory = tk.BooleanVar(value=True)
-        controls = ttk.Frame(page)
-        controls.grid(row=2,columnspan=3,sticky="w",pady=6)
-        for label,var,values in (("画风",self.style,STYLES),("位置",self.position,list(POSITIONS))):
-            ttk.Label(controls,text=label).pack(side="left")
-            ttk.Combobox(controls,textvariable=var,values=values,state="readonly",width=8).pack(side="left",padx=5)
-        ttk.Label(controls,text="主体高度 %").pack(side="left")
-        ttk.Combobox(controls,textvariable=self.size,values=(35,50,64,80,95),state="readonly",width=4).pack(side="left")
-        actions=ttk.Frame(page)
-        actions.grid(row=3,columnspan=3,sticky="w",pady=6)
-        ttk.Checkbutton(actions,text="本地生成式融合",variable=self.generate).pack(side="left")
-        ttk.Checkbutton(actions,text="前爪搭在树干上",variable=self.perch).pack(side="left")
-        ttk.Button(actions,text="载入示例照片",command=self.demo).pack(side="left")
-        self.go=ttk.Button(actions,text="生成预览",command=self.run)
-        self.go.pack(side="left",padx=6)
-        self.save=ttk.Button(actions,text="保存 PNG",command=self.export,state="disabled")
-        self.save.pack(side="left")
-        detailbar=ttk.Frame(page)
-        detailbar.grid(row=4,columnspan=3,sticky="w")
-        ttk.Checkbutton(detailbar,text="生成后增强至 4× 分辨率",variable=self.hd).pack(side="left")
-        self.existing=ttk.Button(detailbar,text="增强已有成图…",command=self.open_for_enhancement)
-        self.existing.pack(side="left",padx=6)
-        ttk.Checkbutton(detailbar,text="低内存生成",variable=self.low_memory).pack(side="left")
-        self.status=tk.StringVar(value="所有图片均在本机处理。")
-        ttk.Label(page,textvariable=self.status).grid(row=5,columnspan=3,sticky="w")
-        self.preview=ttk.Label(page)
-        self.preview.grid(row=6,columnspan=3,pady=8)
+        self.hd = tk.BooleanVar(value=(Path(os.environ.get("PHOTOSTUDIO_HD", ROOT / "hd")) / "realesrgan-ncnn-vulkan.exe").is_file())
+        self.status = tk.StringVar(value="选择两张照片，或载入示例开始创作")
+
+        def button(parent, title, action, primary=False):
+            return tk.Button(parent, text=title, command=action, relief="flat", bd=0,
+                             bg=accent if primary else "#e4e9df", fg="white" if primary else ink,
+                             activebackground="#bfd0bd", cursor="hand2", padx=10, pady=5)
+
+        def label(parent, title, size=10, bold=False):
+            return tk.Label(parent,text=title,bg=parent["bg"],fg=ink,
+                            font=("Microsoft YaHei UI",size,"bold" if bold else "normal"))
+
+        bar=tk.Frame(root,bg=ink,padx=20,pady=9)
+        bar.pack(fill="x")
+        tk.Label(bar,text="映境画室",bg=ink,fg="#fff8e9",
+                 font=("Microsoft YaHei UI",18,"bold")).pack(side="left")
+        button(bar,"载入示例照片",self.demo).pack(side="right")
+        self.existing=button(bar,"增强已有成图…",self.open_for_enhancement)
+        self.existing.pack(side="right",padx=8)
+
+        body=tk.Frame(root,bg=paper,padx=14,pady=12)
+        body.pack(fill="both",expand=True)
+        sidebar=tk.Frame(body,bg=panel,padx=14,pady=10)
+        sidebar.pack(side="left",fill="y")
+        label(sidebar,"素材",13,True).pack(anchor="w")
+        self.thumbs=[]
+        self.thumb_images=[None,None]
+        for i,title in enumerate(("主体照片","背景照片")):
+            row=button(sidebar,"＋   "+title,lambda i=i:self.pick(i))
+            row.pack(fill="x",pady=(6,0))
+            self.thumbs.append(row)
+            self.paths[i].trace_add("write",lambda *_, i=i:self.update_thumb(i))
+
+        label(sidebar,"画风",13,True).pack(anchor="w",pady=(12,3))
+        styles=tk.Frame(sidebar,bg=panel)
+        styles.pack(anchor="w")
+        for i,name in enumerate(STYLES):
+            tk.Radiobutton(styles,text=name,variable=self.style,value=name,indicatoron=False,
+                           bg="#e8e9e2",fg=ink,selectcolor="#b4cfb8", relief="flat",
+                           bd=0,padx=7,pady=3,cursor="hand2").grid(row=i//3,column=i%3,sticky="ew",padx=1,pady=1)
+
+        layout=tk.Frame(sidebar,bg=panel)
+        layout.pack(fill="x",pady=(10,6))
+        for i,(title,var,values) in enumerate((("主体位置",self.position,list(POSITIONS)),
+                                              ("高度占比 %",self.size,(35,50,64,80,95)))):
+            label(layout,title).grid(row=0,column=i,sticky="w")
+            ttk.Combobox(layout,textvariable=var,values=values,state="readonly",width=9).grid(row=1,column=i,padx=(0,6))
+        for title,var in (("本地生成式融合",self.generate),("前爪搭在树干上",self.perch),
+                          ("4× 高清增强",self.hd),("低内存生成",self.low_memory)):
+            tk.Checkbutton(sidebar,text=title,variable=var,bg=panel,fg=ink,activebackground=panel,
+                           highlightthickness=0,bd=0).pack(anchor="w")
+        self.go=button(sidebar,"生成预览",self.run,True)
+        self.go.pack(side="bottom",fill="x",pady=(6,0))
+
+        workspace=tk.Frame(body,bg=panel,padx=12,pady=10)
+        workspace.pack(side="left",fill="both",expand=True,padx=(12,0))
+        header=tk.Frame(workspace,bg=panel)
+        header.pack(fill="x",pady=(0,8))
+        self.caption=label(header,"作品示例",13,True)
+        self.caption.pack(side="left")
+        self.save=button(header,"保存 PNG",self.export)
+        self.save.config(state="disabled")
+        self.save.pack(side="right")
+        tk.Label(workspace,textvariable=self.status,anchor="w",bg=panel,fg="#54645a").pack(side="bottom",fill="x",pady=(8,0))
+        self.preview=tk.Canvas(workspace,bg="#e1e4da",bd=0,highlightthickness=0)
+        self.preview.pack(fill="both",expand=True)
+        sample_art=(ROOT if getattr(sys,"frozen",False) else ROOT.parent/"assets")/"result.jpg"
+        self.cover=open_image(sample_art).convert("RGB") if sample_art.is_file() else None
+        self.preview.bind("<Configure>",self.draw_preview)
+
+    def update_thumb(self,i):
+        path=Path(self.paths[i].get())
+        try:
+            image=open_image(path)
+            image.thumbnail((56,36),Image.Resampling.LANCZOS)
+            self.thumb_images[i]=ImageTk.PhotoImage(image)
+        except (OSError,ValueError):
+            self.thumb_images[i]=None
+        self.thumbs[i].configure(image=self.thumb_images[i] or "",compound="left",
+                                 text="  "+("主体" if i==0 else "背景")+" · "+path.stem[:10])
+
+    def draw_preview(self,event=None):
+        image=self.result if self.result is not None else self.cover
+        if image is None:
+            return
+        w,h=self.preview.winfo_width(),self.preview.winfo_height()
+        if min(w,h)<8:
+            return
+        scale=min((w-6)/image.width,(h-6)/image.height)
+        display=image.resize((max(1,round(image.width*scale)),max(1,round(image.height*scale))),Image.Resampling.LANCZOS)
+        self.photo=ImageTk.PhotoImage(display)
+        self.preview.delete("art")
+        self.preview.create_image(w/2,h/2,image=self.photo,tags="art")
 
     def demo(self):
         self.perch.set(True)
@@ -246,10 +312,8 @@ class App:
             messagebox.showerror("生成失败",str(value))
             return
         self.result,warning=value
-        preview=self.result.copy()
-        preview.thumbnail((760,430))
-        self.photo=ImageTk.PhotoImage(preview)
-        self.preview.configure(image=self.photo)
+        self.caption.configure(text="成图预览")
+        self.draw_preview()
         self.status.set("可保存 %d × %d 像素" % self.result.size)
         self.save.configure(state="normal")
         if warning:

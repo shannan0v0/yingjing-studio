@@ -1,3 +1,4 @@
+import os
 # -*- mode: python ; coding: utf-8 -*-
 
 
@@ -5,7 +6,7 @@ a = Analysis(
     ['studio.py'],
     pathex=[],
     binaries=[],
-    datas=[('hd','hd'), ('u2netp.onnx', '.'), ('perch.png', '.'), ('../cat-demo.jpg', '.'), ('../forest-demo.jpg', '.'), ('notices','notices')],
+    datas=[('u2netp.onnx', '.'), ('../assets/result.jpg', '.'), ('perch.png', '.'), ('../cat-demo.jpg', '.'), ('../forest-demo.jpg', '.'), ('notices','notices')] + ([('hd','hd')] if os.path.isdir(os.path.join(SPECPATH,'hd')) else []),
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
